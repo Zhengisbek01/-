@@ -1000,87 +1000,96 @@ function Documents({ctx}){
         const d = documents.find(x=>x.id===openDoc);
         if(!d) return null;
         const canAct = d.status==='на согласовании';
+        const closeAll = ()=>{setOpenDoc(null); setRejectMode(false); setRejectText('');};
         return (
-          <Modal title={`${d.type} · ${d.title}`} onClose={()=>{setOpenDoc(null); setRejectMode(false); setRejectText('');}} width={600}>
-            <div style={{display:'flex', gap:10, flexWrap:'wrap', marginBottom:14, fontSize:12.5, color:'var(--muted)'}}>
-              <div><b style={{color:'var(--text)'}}>№:</b> {d.number || d.draftNumber || '—'}</div>
-              <div><b style={{color:'var(--text)'}}>Дата:</b> {d.date}</div>
-              <div><b style={{color:'var(--text)'}}>От кого:</b> {d.author}</div>
-              {d.to && <div><b style={{color:'var(--text)'}}>Кому:</b> {d.to}</div>}
-              {d.amount && <div><b style={{color:'var(--text)'}}>Сумма:</b> {fmtKZT(d.amount)}</div>}
-            </div>
+          <div onClick={closeAll} style={{position:'fixed', inset:0, background:'rgba(15,17,21,.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50, padding:16}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, width:520, maxWidth:'100%', maxHeight:'88vh', overflowY:'auto'}}>
 
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:5}}>Текст документа</div>
-              <div style={{fontSize:13.5, whiteSpace:'pre-wrap', background:'var(--panel-2)', border:'1px solid var(--line)', padding:'10px 12px'}}>
-                {d.text?.trim() || 'Текст не указан.'}
+              <div style={{padding:'28px 28px 0'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <span style={{fontSize:12.5, color:LT.accent, fontWeight:600}}>{d.type}</span>
+                  <span onClick={closeAll} style={{color:LT.muted2, fontSize:20, cursor:'pointer', lineHeight:1}}>×</span>
+                </div>
+                <div style={{fontSize:19, fontWeight:700, color:LT.text, marginBottom:18}}>{d.title}</div>
+                <div style={{display:'flex', gap:28, flexWrap:'wrap', fontSize:13, color:LT.muted, paddingBottom:22, borderBottom:`1px solid ${LT.border}`}}>
+                  <div>№ <span style={{color:LT.text, fontWeight:600}}>{d.number || d.draftNumber || '—'}</span></div>
+                  <div>Дата <span style={{color:LT.text, fontWeight:600}}>{d.date}</span></div>
+                  <div>От <span style={{color:LT.text, fontWeight:600}}>{d.author}</span></div>
+                  {d.to && <div>Кому <span style={{color:LT.text, fontWeight:600}}>{d.to}</span></div>}
+                  {d.amount && <div>Сумма <span style={{color:LT.text, fontWeight:600}}>{fmtKZT(d.amount)}</span></div>}
+                </div>
               </div>
-            </div>
 
-            <div style={{marginBottom:18}}>
-              <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:5}}>Прикреплённые файлы</div>
-              {d.files && d.files.length>0 ? (
-                <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
-                  {d.files.map((f,i)=>(
-                    <span key={i} style={{fontSize:12, background:'var(--panel-2)', border:'1px solid var(--line)', padding:'4px 9px'}}>{f}</span>
+              <div style={{padding:'24px 28px'}}>
+                <div style={{fontSize:12, color:LT.muted2, marginBottom:10}}>Текст документа</div>
+                <div style={{fontSize:14, lineHeight:1.6, color:'#333A45', marginBottom:28}}>
+                  {d.text?.trim() || 'Текст не указан.'}
+                </div>
+
+                <div style={{fontSize:12, color:LT.muted2, marginBottom:10}}>Прикреплённые файлы</div>
+                {d.files && d.files.length>0 ? (
+                  <div style={{fontSize:13.5, color:LT.text, marginBottom:32}}>{d.files.join(', ')}</div>
+                ) : <div style={{fontSize:13, color:LT.muted2, marginBottom:32}}>Файлы не прикреплены</div>}
+
+                <div style={{fontSize:12, color:LT.muted2, marginBottom:4}}>Маршрут согласования</div>
+                <div>
+                  {d.steps.map((s,i)=>(
+                    <div key={i} style={{padding:'14px 0', borderBottom: i<d.steps.length-1 ? '1px solid #F1F2F5':'none'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline'}}>
+                        <div>
+                          <div style={{fontSize:14.5, fontWeight:600, color:LT.text}}>{s.name}</div>
+                          <div style={{fontSize:12.5, color:LT.muted2, marginTop:2}}>{s.role}</div>
+                        </div>
+                        <div style={{fontSize:12.5, fontWeight:600, color: s.status==='подписано' ? LT.accent : s.status==='отклонено' ? '#B0392E' : '#966A17'}}>{s.status}</div>
+                      </div>
+                      {s.status==='отклонено' && s.comment && (
+                        <div style={{fontSize:12.5, color:'#B0392E', marginTop:6}}>Комментарий: {s.comment}</div>
+                      )}
+                    </div>
                   ))}
                 </div>
-              ) : <div style={{fontSize:12.5, color:'var(--muted-2)'}}>Файлы не прикреплены</div>}
-            </div>
 
-            <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:8}}>Маршрут согласования</div>
-            <div style={{marginBottom:16}}>
-              {d.steps.map((s,i)=>(
-                <div key={i} style={{padding:'9px 0', borderBottom: i<d.steps.length-1 ? '1px solid var(--line)':'none'}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                    <div>
-                      <div style={{fontSize:13.5}}>{s.name}</div>
-                      <div style={{fontSize:11, color:'var(--muted-2)'}}>{s.role}</div>
-                    </div>
-                    <Badge tone={s.status==='подписано'?'good':s.status==='отклонено'?'bad':'accent'}>{s.status}</Badge>
+                {d.status==='подписан' && (
+                  <div style={{fontSize:13, color:LT.accent, marginTop:20}}>Документ полностью подписан. Рег. номер: {d.number}</div>
+                )}
+                {d.status==='отклонён' && (
+                  <div style={{fontSize:13, color:'#B0392E', marginTop:20}}>Документ отклонён на этапе согласования.</div>
+                )}
+
+                {canAct && !rejectMode && (
+                  <div style={{display:'flex', gap:12, marginTop:28}}>
+                    <button onClick={()=>advance(d.id)} style={{
+                      flex:1, background:LT.accent, color:'#fff', border:'none', borderRadius:8,
+                      padding:'12px 0', fontSize:14, fontWeight:700, cursor:'pointer'
+                    }}>Подписать</button>
+                    <button onClick={()=>setRejectMode(true)} style={{
+                      flex:1, background:'transparent', border:`1px solid ${LT.border}`, color:LT.muted,
+                      borderRadius:8, padding:'12px 0', fontSize:14, fontWeight:700, cursor:'pointer'
+                    }}>Отказать</button>
                   </div>
-                  {s.status==='отклонено' && s.comment && (
-                    <div style={{fontSize:12, color:'var(--bad)', marginTop:6, background:'rgba(192,86,74,.08)', padding:'7px 9px'}}>
-                      Комментарий: {s.comment}
+                )}
+
+                {canAct && rejectMode && (
+                  <div style={{marginTop:28}}>
+                    <div style={{fontSize:12, color:LT.muted2, marginBottom:8}}>Комментарий к отказу</div>
+                    <textarea autoFocus value={rejectText} onChange={e=>setRejectText(e.target.value)}
+                      placeholder="Укажите причину отказа в согласовании / подписании"
+                      style={{width:'100%', minHeight:70, background:LT.field, border:`1px solid ${LT.border}`, borderRadius:8, color:LT.text, padding:'10px 12px', fontSize:13.5, marginBottom:12, fontFamily:'inherit'}}/>
+                    <div style={{display:'flex', gap:12}}>
+                      <button onClick={()=>reject(d.id, rejectText)} style={{
+                        flex:1, background:'#B0392E', color:'#fff', border:'none', borderRadius:8,
+                        padding:'12px 0', fontSize:14, fontWeight:700, cursor:'pointer'
+                      }}>Подтвердить отказ</button>
+                      <button onClick={()=>{setRejectMode(false); setRejectText('');}} style={{
+                        flex:1, background:'transparent', border:`1px solid ${LT.border}`, color:LT.muted,
+                        borderRadius:8, padding:'12px 0', fontSize:14, fontWeight:700, cursor:'pointer'
+                      }}>Отмена</button>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )}
+              </div>
             </div>
-
-            {d.status==='подписан' && (
-              <div style={{fontSize:13, color:'var(--good)'}}>Документ полностью подписан. Рег. номер: {d.number}</div>
-            )}
-            {d.status==='отклонён' && (
-              <div style={{fontSize:13, color:'var(--bad)'}}>Документ отклонён на этапе согласования.</div>
-            )}
-
-            {canAct && !rejectMode && (
-              <div style={{display:'flex', gap:10}}>
-                <Btn tone="accent" onClick={()=>advance(d.id)}>Подписать следующий шаг</Btn>
-                <button onClick={()=>setRejectMode(true)} style={{
-                  background:'transparent', border:'1px solid var(--bad)', color:'var(--bad)',
-                  padding:'8px 14px', fontSize:13.5, fontWeight:600, cursor:'pointer'
-                }}>Отказать</button>
-              </div>
-            )}
-
-            {canAct && rejectMode && (
-              <div>
-                <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:6}}>Комментарий к отказу</div>
-                <textarea autoFocus value={rejectText} onChange={e=>setRejectText(e.target.value)}
-                  placeholder="Укажите причину отказа в согласовании / подписании"
-                  style={{width:'100%', minHeight:70, background:'var(--panel-2)', border:'1px solid var(--line)', color:'var(--text)', padding:'8px 10px', fontSize:13.5, marginBottom:10}}/>
-                <div style={{display:'flex', gap:10}}>
-                  <button onClick={()=>reject(d.id, rejectText)} style={{
-                    background:'var(--bad)', color:'#fff', border:'1px solid var(--bad)',
-                    padding:'8px 14px', fontSize:13.5, fontWeight:600, cursor:'pointer'
-                  }}>Подтвердить отказ</button>
-                  <Btn onClick={()=>{setRejectMode(false); setRejectText('');}}>Отмена</Btn>
-                </div>
-              </div>
-            )}
-          </Modal>
+          </div>
         );
       })()}
     </div>
