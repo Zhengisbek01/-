@@ -825,7 +825,7 @@ function Documents({ctx}){
         <table style={{width:'100%', borderCollapse:'collapse'}}>
           <thead>
             <tr>
-              {['Документ','Тип','От кого','Дата','№','Статус',''].map(h=>(
+              {['№','Дата','Документ','Тип','От кого','Статус',''].map(h=>(
                 <th key={h} style={{textAlign:'left', fontSize:11, fontWeight:600, color:LT.muted, padding:'10px 18px', borderBottom:`1px solid ${LT.border}`}}>{h}</th>
               ))}
             </tr>
@@ -838,11 +838,11 @@ function Documents({ctx}){
               <tr key={d.id} onClick={()=>setOpenDoc(d.id)} style={{cursor:'pointer'}}
                 onMouseEnter={e=>e.currentTarget.style.background=LT.field}
                 onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <td className="num" style={{padding:'11px 18px', fontSize:13, color: d.number ? LT.text : LT.muted2, borderBottom:`1px solid ${LT.border}`}}>{d.number || d.draftNumber || '—'}</td>
+                <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.date}</td>
                 <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`, fontWeight:500}}>{d.title}</td>
                 <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.type}</td>
                 <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.author}</td>
-                <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.date}</td>
-                <td className="num" style={{padding:'11px 18px', fontSize:13, color: d.number ? LT.text : LT.muted2, borderBottom:`1px solid ${LT.border}`}}>{d.number || d.draftNumber || '—'}</td>
                 <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>{statusBadge(d.status)}</td>
                 <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
                   <button onClick={e=>{e.stopPropagation(); setOpenDoc(d.id);}} style={{
