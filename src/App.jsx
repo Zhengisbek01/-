@@ -714,16 +714,17 @@ function staffLabel(id){
 }
 
 function Documents({ctx}){
-  const {documents, setDocuments, outlets} = ctx;
+  const {documents, setDocuments} = ctx;
   const [openDoc, setOpenDoc] = useState(null);
-  const [formOpen, setFormOpen] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
   const [activeType, setActiveType] = useState(DOC_TYPES[0].id);
-  const [outletId, setOutletId] = useState(outlets[0]?.id);
   const blankForm = {title:'', from: STAFF[0].id, to:'', text:'', files:[], amount:'', approvers:[], signer: STAFF[3].id};
   const [form, setForm] = useState(blankForm);
 
   const type = DOC_TYPES.find(t=>t.id===activeType) || DOC_TYPES[0];
-  const outlet = outlets.find(o=>o.id===outletId) || outlets[0];
+
+  const pending = documents.filter(d=>d.status!=='подписан');
+  const allDocs = documents;
 
   function pickType(id){
     setActiveType(id);
@@ -747,12 +748,16 @@ function Documents({ctx}){
       (()=>{ const s = STAFF.find(x=>x.id===form.signer); return {name:s.name, role:s.role+' · подписант', status:'ожидает'}; })(),
     ];
     const fromStaff = STAFF.find(x=>x.id===form.from);
-    setDocuments(prev=>[{
-      id:uid(), title:form.title.trim(), type:type.label, prefix:type.prefix,
-      author: fromStaff?.name || '—', to: form.to, text: form.text,
-      files: form.files, amount: form.amount, outlet: outlet?.name,
-      date: todayISO(), status:'на согласовании', number:null, steps,
-    }, ...prev]);
+    setDocuments(prev=>{
+      const draftSeq = prev.filter(d=>d.draftNumber).length + 1;
+      return [{
+        id:uid(), title:form.title.trim(), type:type.label, prefix:type.prefix,
+        author: fromStaff?.name || '—', to: form.to, text: form.text,
+        files: form.files, amount: form.amount,
+        date: todayISO(), status:'на согласовании', number:null,
+        draftNumber:`Проект-${draftSeq}`, steps,
+      }, ...prev];
+    });
     setForm({...blankForm, from: form.from, signer: form.signer});
     setFormOpen(false);
   }
@@ -775,6 +780,53 @@ function Documents({ctx}){
     });
   }
 
+  function statusBadge(status){
+    return (
+      <span style={{
+        fontSize:11.5, fontWeight:600, padding:'3px 9px', borderRadius:20,
+        background: status==='подписан' ? LT.accentSoft : '#FDF3E3',
+        color: status==='подписан' ? LT.accent : '#966A17',
+      }}>{status}</span>
+    );
+  }
+
+  function DocsTable({rows, emptyText}){
+    return (
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%', borderCollapse:'collapse'}}>
+          <thead>
+            <tr>
+              {['Документ','Тип','От кого','Дата','№','Статус',''].map(h=>(
+                <th key={h} style={{textAlign:'left', fontSize:11, fontWeight:600, color:LT.muted, padding:'10px 18px', borderBottom:`1px solid ${LT.border}`}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length===0 && (
+              <tr><td colSpan={7} style={{padding:'16px 18px', fontSize:13, color:LT.muted2}}>{emptyText}</td></tr>
+            )}
+            {rows.map(d=>(
+              <tr key={d.id}>
+                <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.title}</td>
+                <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.type}</td>
+                <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.author}</td>
+                <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.date}</td>
+                <td className="num" style={{padding:'11px 18px', fontSize:13, color: d.number ? LT.text : LT.muted2, borderBottom:`1px solid ${LT.border}`}}>{d.number || d.draftNumber || '—'}</td>
+                <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>{statusBadge(d.status)}</td>
+                <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
+                  <button onClick={()=>setOpenDoc(d.id)} style={{
+                    background:LT.field, border:`1px solid ${LT.border}`, borderRadius:6, padding:'5px 10px',
+                    fontSize:12, color:LT.text, cursor:'pointer', fontWeight:600
+                  }}>Маршрут</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <div style={{background:LT.bg, margin:'-24px', padding:24, minHeight:'calc(100vh - 61px)'}}>
       {/* header */}
@@ -785,28 +837,18 @@ function Documents({ctx}){
             Служебные записки, заявки, приказы и докладные — номер присваивается после подписания
           </div>
         </div>
-        <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-          <select value={outletId} onChange={e=>setOutletId(e.target.value)} style={{
-            background:LT.card, border:`1px solid ${LT.border}`, borderRadius:20, padding:'7px 14px 7px 26px',
-            fontSize:12.5, color:LT.text, position:'relative', appearance:'none', cursor:'pointer'
-          }}>
-            {outlets.map(o=><option key={o.id} value={o.id}>{o.city}, {o.name}</option>)}
-          </select>
-          <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:20, padding:'7px 14px', fontSize:12.5, color:LT.text}}>
-            НДС 12%
-          </div>
-          <button onClick={()=>{setFormOpen(true); setActiveType(DOC_TYPES[0].id); setForm(blankForm);}} style={{
-            background:LT.accent, color:'#fff', border:'none', borderRadius:20, padding:'9px 18px',
-            fontSize:13, fontWeight:600, cursor:'pointer'
-          }}>+ Новая заявка</button>
-        </div>
+        <button onClick={()=>{setFormOpen(o=>!o); setActiveType(DOC_TYPES[0].id); setForm(blankForm);}} style={{
+          background:LT.accent, color:'#fff', border:'none', borderRadius:20, padding:'9px 18px',
+          fontSize:13, fontWeight:600, cursor:'pointer'
+        }}>{formOpen ? 'Скрыть форму ×' : '+ Создать новый документ'}</button>
       </div>
 
-      {/* type launcher */}
-      <div style={{fontSize:11, letterSpacing:'.04em', color:LT.muted2, marginBottom:10, fontWeight:600}}>ЗАПУСТИТЬ СЛУЖЕБКУ</div>
+      {/* creation card */}
+      {formOpen && (<>
+      <div style={{fontSize:11, letterSpacing:'.04em', color:LT.muted2, marginBottom:10, fontWeight:600}}>ВЫБЕРИТЕ ТИП ДОКУМЕНТА</div>
       <div style={{display:'flex', gap:10, flexWrap:'wrap', marginBottom:20}}>
         {DOC_TYPES.map(t=>{
-          const active = t.id===activeType && formOpen;
+          const active = t.id===activeType;
           return (
             <button key={t.id} onClick={()=>pickType(t.id)} style={{
               background: active ? LT.accent : LT.card, color: active ? '#fff' : LT.text,
@@ -816,8 +858,7 @@ function Documents({ctx}){
           );
         })}
       </div>
-
-      {/* creation card */}
+      </>)}
       {formOpen && (
         <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, padding:20, marginBottom:24, boxShadow:'0 1px 2px rgba(16,24,40,.04)'}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18}}>
@@ -894,49 +935,25 @@ function Documents({ctx}){
         </div>
       )}
 
-      {/* documents list */}
+      {/* pending list */}
+      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden', marginBottom:20}}>
+        <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, display:'flex', alignItems:'center', gap:10}}>
+          <div style={{fontSize:14, fontWeight:700, color:LT.text}}>На согласовании / подписании</div>
+          {pending.length>0 && <span style={{fontSize:11.5, fontWeight:600, color:LT.accent, background:LT.accentSoft, borderRadius:20, padding:'2px 9px'}}>{pending.length}</span>}
+        </div>
+        <DocsTable rows={pending} emptyText="Нет документов в работе" />
+      </div>
+
+      {/* full registry */}
       <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden'}}>
         <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, fontSize:14, fontWeight:700, color:LT.text}}>
-          Документы компании
+          Реестр документов — общий учёт
         </div>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%', borderCollapse:'collapse'}}>
-            <thead>
-              <tr>
-                {['Документ','Тип','От кого','Дата','№','Статус',''].map(h=>(
-                  <th key={h} style={{textAlign:'left', fontSize:11, fontWeight:600, color:LT.muted, padding:'10px 18px', borderBottom:`1px solid ${LT.border}`}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map(d=>(
-                <tr key={d.id}>
-                  <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.title}</td>
-                  <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.type}</td>
-                  <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.author}</td>
-                  <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.date}</td>
-                  <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.number || '—'}</td>
-                  <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
-                    <span style={{
-                      fontSize:11.5, fontWeight:600, padding:'3px 9px', borderRadius:20,
-                      background: d.status==='подписан' ? LT.accentSoft : '#FDF3E3',
-                      color: d.status==='подписан' ? LT.accent : '#966A17',
-                    }}>{d.status}</span>
-                  </td>
-                  <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
-                    <button onClick={()=>setOpenDoc(d.id)} style={{
-                      background:LT.field, border:`1px solid ${LT.border}`, borderRadius:6, padding:'5px 10px',
-                      fontSize:12, color:LT.text, cursor:'pointer', fontWeight:600
-                    }}>Маршрут</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DocsTable rows={allDocs} emptyText="Документов пока нет" />
       </div>
+
       <div style={{fontSize:11.5, color:LT.muted2, marginTop:10}}>
-        Подписание — сейчас симуляция маршрута согласования. Реальную ЭЦП (НУЦ РК) подключим отдельно, когда определитесь.
+        Пока документ на согласовании, у него временный номер «Проект-N». Постоянный регистрационный номер присваивается автоматически после полного подписания. Подписание — сейчас симуляция маршрута согласования. Реальную ЭЦП (НУЦ РК) подключим отдельно, когда определитесь.
       </div>
 
       {openDoc && (()=>{
