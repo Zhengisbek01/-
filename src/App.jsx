@@ -76,6 +76,21 @@ const ROLES = [
   {id:'hr', label:'HR'},
 ];
 
+const STAFF = [
+  {id:'s1', name:'Данияр Ахметов', role:'Админ'},
+  {id:'s2', name:'Марат Тулегенов', role:'Учредитель'},
+  {id:'s3', name:'Ерболат Сагындыков', role:'Управляющий директор'},
+  {id:'s4', name:'Джумадилова Раушан', role:'Директор'},
+];
+
+const DOC_TYPES = [
+  {id:'sluzhebka', label:'Служебная записка', prefix:'СЗ', placeholder:'Например: О продлении рамочного договора с поставщиком', hasTo:true, hasAmount:false},
+  {id:'zakupka', label:'Заявка на закупку', prefix:'ЗК', placeholder:'Например: Закупка кофе и одноразовой посуды на октябрь', hasTo:false, hasAmount:true},
+  {id:'dokladnaya', label:'Докладная записка', prefix:'ДЗ', placeholder:'Например: О нарушении графика смен кассиром', hasTo:true, hasAmount:false},
+  {id:'prikaz', label:'Приказ', prefix:'ПР', placeholder:'Например: О премировании сотрудников по итогам сентября', hasTo:false, hasAmount:false},
+  {id:'akt', label:'Акт списания', prefix:'АС', placeholder:'Например: Списание товара с истёкшим сроком годности', hasTo:false, hasAmount:true},
+];
+
 const NAV = [
   {group:'Обзор', items:[
     {id:'dashboard', label:'Дашборд'},
@@ -683,76 +698,253 @@ function RentPayments({ctx}){
 }
 
 // ---------- DOCUMENTS (EDMS) ----------
+// ---------- light theme tokens for the internal-docs screen ----------
+const LT = {
+  bg:'#F4F5F7', card:'#FFFFFF', border:'#E3E5EA', text:'#1B2430', muted:'#6B7280',
+  muted2:'#9AA1AC', field:'#F7F8FA', accent:'#1B6E52', accentHover:'#155A43', accentSoft:'#E7F3EE',
+};
+function ltInput(extra){
+  return {width:'100%', background:LT.field, border:`1px solid ${LT.border}`, color:LT.text,
+    borderRadius:8, padding:'9px 11px', fontSize:13.5, fontFamily:'inherit', ...extra};
+}
+
+function staffLabel(id){
+  const s = STAFF.find(x=>x.id===id);
+  return s ? `${s.name} — ${s.role}` : '—';
+}
+
 function Documents({ctx}){
-  const {documents, setDocuments} = ctx;
-  const [modal, setModal] = useState(false);
+  const {documents, setDocuments, outlets} = ctx;
   const [openDoc, setOpenDoc] = useState(null);
-  const [form, setForm] = useState({title:'', type:'Приказ', author:'Вы'});
+  const [formOpen, setFormOpen] = useState(true);
+  const [activeType, setActiveType] = useState(DOC_TYPES[0].id);
+  const [outletId, setOutletId] = useState(outlets[0]?.id);
+  const blankForm = {title:'', from: STAFF[0].id, to:'', text:'', files:[], amount:'', approvers:[], signer: STAFF[3].id};
+  const [form, setForm] = useState(blankForm);
+
+  const type = DOC_TYPES.find(t=>t.id===activeType) || DOC_TYPES[0];
+  const outlet = outlets.find(o=>o.id===outletId) || outlets[0];
+
+  function pickType(id){
+    setActiveType(id);
+    setForm({...blankForm, from: form.from, signer: form.signer});
+    setFormOpen(true);
+  }
+
+  function toggleApprover(id){
+    setForm(f=>({...f, approvers: f.approvers.includes(id) ? f.approvers.filter(x=>x!==id) : [...f.approvers, id]}));
+  }
+
+  function onFiles(e){
+    const names = Array.from(e.target.files||[]).map(f=>f.name);
+    setForm(f=>({...f, files: names}));
+  }
 
   function create(){
-    if(!form.title) return;
-    setDocuments(prev=>[{id:uid(), ...form, date:todayISO(), status:'на согласовании', steps:[
-      {name:form.author, role:'Инициатор', status:'подписано'},
-      {name:'Согласующий', role:'Согласующий', status:'ожидает'},
-    ]}, ...prev]);
-    setModal(false);
-    setForm({title:'', type:'Приказ', author:'Вы'});
+    if(!form.title.trim()) return;
+    const steps = [
+      ...form.approvers.map(id=>{ const s = STAFF.find(x=>x.id===id); return {name:s.name, role:s.role, status:'ожидает'}; }),
+      (()=>{ const s = STAFF.find(x=>x.id===form.signer); return {name:s.name, role:s.role+' · подписант', status:'ожидает'}; })(),
+    ];
+    const fromStaff = STAFF.find(x=>x.id===form.from);
+    setDocuments(prev=>[{
+      id:uid(), title:form.title.trim(), type:type.label, prefix:type.prefix,
+      author: fromStaff?.name || '—', to: form.to, text: form.text,
+      files: form.files, amount: form.amount, outlet: outlet?.name,
+      date: todayISO(), status:'на согласовании', number:null, steps,
+    }, ...prev]);
+    setForm({...blankForm, from: form.from, signer: form.signer});
+    setFormOpen(false);
   }
 
   function advance(docId){
-    setDocuments(prev=>prev.map(d=>{
-      if(d.id!==docId) return d;
-      const steps = d.steps.map(s=>({...s}));
-      const idx = steps.findIndex(s=>s.status==='ожидает');
-      if(idx>=0) steps[idx].status='подписано';
-      const allSigned = steps.every(s=>s.status==='подписано');
-      return {...d, steps, status: allSigned ? 'подписан' : 'на согласовании'};
-    }));
+    setDocuments(prev=>{
+      // figure out next sequence number for this doc's prefix among already-signed docs
+      const target = prev.find(d=>d.id===docId);
+      const signedOfPrefix = prev.filter(d=>d.prefix===target?.prefix && d.number).length;
+      return prev.map(d=>{
+        if(d.id!==docId) return d;
+        const steps = d.steps.map(s=>({...s}));
+        const idx = steps.findIndex(s=>s.status==='ожидает');
+        if(idx>=0) steps[idx].status='подписано';
+        const allSigned = steps.every(s=>s.status==='подписано');
+        const year = new Date().getFullYear();
+        const number = allSigned ? (d.number || `${d.prefix||'ДОК'}-${year}-${String(signedOfPrefix+1).padStart(3,'0')}`) : d.number;
+        return {...d, steps, status: allSigned ? 'подписан' : 'на согласовании', number};
+      });
+    });
   }
 
   return (
-    <div>
-      <div style={{fontSize:12.5, color:'var(--muted)', marginBottom:14}}>
+    <div style={{background:LT.bg, margin:'-24px', padding:24, minHeight:'calc(100vh - 61px)'}}>
+      {/* header */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:14, marginBottom:22}}>
+        <div>
+          <div style={{fontSize:20, fontWeight:700, color:LT.text}}>Внутренняя документация</div>
+          <div style={{fontSize:13, color:LT.muted, marginTop:4, maxWidth:480}}>
+            Служебные записки, заявки, приказы и докладные — номер присваивается после подписания
+          </div>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+          <select value={outletId} onChange={e=>setOutletId(e.target.value)} style={{
+            background:LT.card, border:`1px solid ${LT.border}`, borderRadius:20, padding:'7px 14px 7px 26px',
+            fontSize:12.5, color:LT.text, position:'relative', appearance:'none', cursor:'pointer'
+          }}>
+            {outlets.map(o=><option key={o.id} value={o.id}>{o.city}, {o.name}</option>)}
+          </select>
+          <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:20, padding:'7px 14px', fontSize:12.5, color:LT.text}}>
+            НДС 12%
+          </div>
+          <button onClick={()=>{setFormOpen(true); setActiveType(DOC_TYPES[0].id); setForm(blankForm);}} style={{
+            background:LT.accent, color:'#fff', border:'none', borderRadius:20, padding:'9px 18px',
+            fontSize:13, fontWeight:600, cursor:'pointer'
+          }}>+ Новая заявка</button>
+        </div>
+      </div>
+
+      {/* type launcher */}
+      <div style={{fontSize:11, letterSpacing:'.04em', color:LT.muted2, marginBottom:10, fontWeight:600}}>ЗАПУСТИТЬ СЛУЖЕБКУ</div>
+      <div style={{display:'flex', gap:10, flexWrap:'wrap', marginBottom:20}}>
+        {DOC_TYPES.map(t=>{
+          const active = t.id===activeType && formOpen;
+          return (
+            <button key={t.id} onClick={()=>pickType(t.id)} style={{
+              background: active ? LT.accent : LT.card, color: active ? '#fff' : LT.text,
+              border: `1px solid ${active ? LT.accent : LT.border}`, borderRadius:8,
+              padding:'9px 16px', fontSize:13, fontWeight:600, cursor:'pointer'
+            }}>+ {t.label}</button>
+          );
+        })}
+      </div>
+
+      {/* creation card */}
+      {formOpen && (
+        <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, padding:20, marginBottom:24, boxShadow:'0 1px 2px rgba(16,24,40,.04)'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18}}>
+            <div style={{fontSize:15, fontWeight:700, color:LT.text}}>Новый документ · {type.label}</div>
+            <span onClick={()=>setFormOpen(false)} style={{fontSize:13, color:LT.muted, cursor:'pointer'}}>Отменить ×</span>
+          </div>
+
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>Тема / заголовок</div>
+            <input style={ltInput()} placeholder={type.placeholder} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+          </div>
+
+          <div style={{display:'flex', gap:14, flexWrap:'wrap', marginBottom:14}}>
+            <div style={{flex:'1 1 220px'}}>
+              <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>От кого</div>
+              <select style={ltInput()} value={form.from} onChange={e=>setForm({...form,from:e.target.value})}>
+                {STAFF.map(s=><option key={s.id} value={s.id}>{s.name} — {s.role}</option>)}
+              </select>
+            </div>
+            {type.hasTo ? (
+              <div style={{flex:'1 1 220px'}}>
+                <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>Кому адресовано</div>
+                <input style={ltInput()} placeholder="Например: Джумадилова Раушан, директор" value={form.to} onChange={e=>setForm({...form,to:e.target.value})}/>
+              </div>
+            ) : type.hasAmount ? (
+              <div style={{flex:'1 1 220px'}}>
+                <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>Сумма, ₸</div>
+                <input type="number" style={ltInput()} placeholder="0" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>Текст документа</div>
+            <textarea style={ltInput({minHeight:90, resize:'vertical'})} placeholder="Изложите суть служебки..." value={form.text} onChange={e=>setForm({...form,text:e.target.value})}/>
+          </div>
+
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>Прикреплённые документы</div>
+            <label style={{
+              display:'inline-flex', alignItems:'center', gap:10, background:LT.field, border:`1px solid ${LT.border}`,
+              borderRadius:8, padding:'9px 12px', fontSize:13, cursor:'pointer', color:LT.text
+            }}>
+              <span style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:6, padding:'4px 10px', fontSize:12.5, fontWeight:600}}>Выбрать файлы</span>
+              <span style={{color:LT.muted}}>{form.files.length ? form.files.join(', ') : 'Файл не выбран'}</span>
+              <input type="file" multiple onChange={onFiles} style={{display:'none'}}/>
+            </label>
+            <div style={{fontSize:11.5, color:LT.muted2, marginTop:6}}>Договоры, КП, сканы, фото — можно выбрать несколько файлов сразу.</div>
+          </div>
+
+          <div style={{display:'flex', gap:24, flexWrap:'wrap', marginBottom:20}}>
+            <div style={{flex:'1 1 240px'}}>
+              <div style={{fontSize:12, color:LT.muted, marginBottom:8}}>Согласующие</div>
+              {STAFF.filter(s=>s.id!==form.signer).map(s=>(
+                <label key={s.id} style={{display:'flex', alignItems:'center', gap:8, marginBottom:8, fontSize:13.5, color:LT.text, cursor:'pointer'}}>
+                  <input type="checkbox" checked={form.approvers.includes(s.id)} onChange={()=>toggleApprover(s.id)}/>
+                  {s.name} <span style={{color:LT.muted}}>— {s.role}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{flex:'1 1 240px'}}>
+              <div style={{fontSize:12, color:LT.muted, marginBottom:6}}>Подписант</div>
+              <select style={ltInput()} value={form.signer} onChange={e=>setForm({...form,signer:e.target.value})}>
+                {STAFF.map(s=><option key={s.id} value={s.id}>{s.name} — {s.role}</option>)}
+              </select>
+              <div style={{fontSize:11.5, color:LT.muted2, marginTop:6}}>Регистрационный номер присваивается автоматически в момент подписания.</div>
+            </div>
+          </div>
+
+          <button onClick={create} style={{
+            background:LT.accent, color:'#fff', border:'none', borderRadius:8, padding:'10px 20px',
+            fontSize:13.5, fontWeight:600, cursor:'pointer'
+          }}>Создать и отправить на согласование</button>
+        </div>
+      )}
+
+      {/* documents list */}
+      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden'}}>
+        <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, fontSize:14, fontWeight:700, color:LT.text}}>
+          Документы компании
+        </div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%', borderCollapse:'collapse'}}>
+            <thead>
+              <tr>
+                {['Документ','Тип','От кого','Дата','№','Статус',''].map(h=>(
+                  <th key={h} style={{textAlign:'left', fontSize:11, fontWeight:600, color:LT.muted, padding:'10px 18px', borderBottom:`1px solid ${LT.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {documents.map(d=>(
+                <tr key={d.id}>
+                  <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.title}</td>
+                  <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.type}</td>
+                  <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.author}</td>
+                  <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.date}</td>
+                  <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.number || '—'}</td>
+                  <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
+                    <span style={{
+                      fontSize:11.5, fontWeight:600, padding:'3px 9px', borderRadius:20,
+                      background: d.status==='подписан' ? LT.accentSoft : '#FDF3E3',
+                      color: d.status==='подписан' ? LT.accent : '#966A17',
+                    }}>{d.status}</span>
+                  </td>
+                  <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
+                    <button onClick={()=>setOpenDoc(d.id)} style={{
+                      background:LT.field, border:`1px solid ${LT.border}`, borderRadius:6, padding:'5px 10px',
+                      fontSize:12, color:LT.text, cursor:'pointer', fontWeight:600
+                    }}>Маршрут</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div style={{fontSize:11.5, color:LT.muted2, marginTop:10}}>
         Подписание — сейчас симуляция маршрута согласования. Реальную ЭЦП (НУЦ РК) подключим отдельно, когда определитесь.
       </div>
-      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:14}}>
-        <Btn tone="accent" onClick={()=>setModal(true)}>+ Документ</Btn>
-      </div>
-      <Panel>
-        <table>
-          <thead><tr><th>Документ</th><th>Тип</th><th>Автор</th><th>Дата</th><th>Статус</th><th></th></tr></thead>
-          <tbody>
-            {documents.map(d=>(
-              <tr key={d.id}>
-                <td>{d.title}</td>
-                <td>{d.type}</td>
-                <td>{d.author}</td>
-                <td className="num">{d.date}</td>
-                <td><Badge tone={d.status==='подписан'?'good':'accent'}>{d.status}</Badge></td>
-                <td><Btn small onClick={()=>setOpenDoc(d.id)}>Маршрут</Btn></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
-
-      {modal && (
-        <Modal title="Новый документ" onClose={()=>setModal(false)}>
-          <Field label="Название"><input style={inputStyle} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></Field>
-          <Field label="Тип">
-            <select style={inputStyle} value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>
-              <option>Приказ</option><option>Служебная записка</option><option>Договор (внутренний)</option><option>Договор (внешний)</option>
-            </select>
-          </Field>
-          <Btn tone="accent" onClick={create}>Создать и отправить на согласование</Btn>
-        </Modal>
-      )}
 
       {openDoc && (()=>{
         const d = documents.find(x=>x.id===openDoc);
         if(!d) return null;
         return (
           <Modal title={d.title} onClose={()=>setOpenDoc(null)}>
+            {d.number && <div style={{fontSize:12, color:'var(--muted)', marginBottom:10}}>Рег. номер: <span className="num">{d.number}</span></div>}
             <div style={{marginBottom:14}}>
               {d.steps.map((s,i)=>(
                 <div key={i} style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom: i<d.steps.length-1 ? '1px solid var(--line)':'none'}}>
