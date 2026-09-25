@@ -174,10 +174,10 @@ function Field({label, children}){
 }
 const inputStyle = {width:'100%', background:'var(--panel-2)', border:'1px solid var(--line)', color:'var(--text)', padding:'8px 10px', fontSize:13.5};
 
-function Modal({title, onClose, children}){
+function Modal({title, onClose, children, width}){
   return (
     <div onClick={onClose} style={{position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50, padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:'var(--panel)', border:'1px solid var(--line)', width:440, maxWidth:'100%', maxHeight:'88vh', overflowY:'auto'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'var(--panel)', border:'1px solid var(--line)', width: width||440, maxWidth:'100%', maxHeight:'88vh', overflowY:'auto'}}>
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 16px', borderBottom:'1px solid var(--line)'}}>
           <div style={{fontWeight:600, fontSize:15}}>{title}</div>
           <button onClick={onClose} style={{background:'none', border:'none', color:'var(--muted)', fontSize:18, cursor:'pointer'}}>×</button>
@@ -713,18 +713,25 @@ function staffLabel(id){
   return s ? `${s.name} — ${s.role}` : '—';
 }
 
+function prefixFor(d){
+  return d.prefix || (DOC_TYPES.find(t=>t.label===d.type)?.prefix) || 'ДОК';
+}
+
 function Documents({ctx}){
   const {documents, setDocuments} = ctx;
   const [openDoc, setOpenDoc] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const [activeType, setActiveType] = useState(DOC_TYPES[0].id);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [rejectText, setRejectText] = useState('');
   const blankForm = {title:'', from: STAFF[0].id, to:'', text:'', files:[], amount:'', approvers:[], signer: STAFF[3].id};
   const [form, setForm] = useState(blankForm);
 
   const type = DOC_TYPES.find(t=>t.id===activeType) || DOC_TYPES[0];
 
-  const pending = documents.filter(d=>d.status!=='подписан');
-  const allDocs = documents;
+  const pending = documents.filter(d=>d.status==='на согласовании');
+  const memoDocs = documents.filter(d=>d.type!=='Приказ');
+  const orderDocs = documents.filter(d=>d.type==='Приказ');
 
   function pickType(id){
     setActiveType(id);
@@ -764,29 +771,42 @@ function Documents({ctx}){
 
   function advance(docId){
     setDocuments(prev=>{
-      // figure out next sequence number for this doc's prefix among already-signed docs
       const target = prev.find(d=>d.id===docId);
-      const signedOfPrefix = prev.filter(d=>d.prefix===target?.prefix && d.number).length;
+      const prefix = prefixFor(target||{});
+      const signedOfPrefix = prev.filter(d=>prefixFor(d)===prefix && d.number).length;
       return prev.map(d=>{
         if(d.id!==docId) return d;
         const steps = d.steps.map(s=>({...s}));
         const idx = steps.findIndex(s=>s.status==='ожидает');
         if(idx>=0) steps[idx].status='подписано';
         const allSigned = steps.every(s=>s.status==='подписано');
-        const year = new Date().getFullYear();
-        const number = allSigned ? (d.number || `${d.prefix||'ДОК'}-${year}-${String(signedOfPrefix+1).padStart(3,'0')}`) : d.number;
+        const number = allSigned ? (d.number || `${prefix}-${signedOfPrefix+1}`) : d.number;
         return {...d, steps, status: allSigned ? 'подписан' : 'на согласовании', number};
       });
     });
   }
 
+  function reject(docId, comment){
+    setDocuments(prev=>prev.map(d=>{
+      if(d.id!==docId) return d;
+      const steps = d.steps.map(s=>({...s}));
+      const idx = steps.findIndex(s=>s.status==='ожидает');
+      if(idx>=0) steps[idx] = {...steps[idx], status:'отклонено', comment: comment.trim() || 'Без комментария'};
+      return {...d, steps, status:'отклонён'};
+    }));
+    setRejectMode(false);
+    setRejectText('');
+  }
+
   function statusBadge(status){
+    const tones = {
+      'подписан': {bg:LT.accentSoft, fg:LT.accent},
+      'отклонён': {bg:'#FBE7E5', fg:'#B0392E'},
+      'на согласовании': {bg:'#FDF3E3', fg:'#966A17'},
+    };
+    const t = tones[status] || tones['на согласовании'];
     return (
-      <span style={{
-        fontSize:11.5, fontWeight:600, padding:'3px 9px', borderRadius:20,
-        background: status==='подписан' ? LT.accentSoft : '#FDF3E3',
-        color: status==='подписан' ? LT.accent : '#966A17',
-      }}>{status}</span>
+      <span style={{fontSize:11.5, fontWeight:600, padding:'3px 9px', borderRadius:20, background:t.bg, color:t.fg}}>{status}</span>
     );
   }
 
@@ -806,18 +826,20 @@ function Documents({ctx}){
               <tr><td colSpan={7} style={{padding:'16px 18px', fontSize:13, color:LT.muted2}}>{emptyText}</td></tr>
             )}
             {rows.map(d=>(
-              <tr key={d.id}>
-                <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.title}</td>
+              <tr key={d.id} onClick={()=>setOpenDoc(d.id)} style={{cursor:'pointer'}}
+                onMouseEnter={e=>e.currentTarget.style.background=LT.field}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`, fontWeight:500}}>{d.title}</td>
                 <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.type}</td>
                 <td style={{padding:'11px 18px', fontSize:13.5, color:LT.text, borderBottom:`1px solid ${LT.border}`}}>{d.author}</td>
                 <td className="num" style={{padding:'11px 18px', fontSize:13, color:LT.muted, borderBottom:`1px solid ${LT.border}`}}>{d.date}</td>
                 <td className="num" style={{padding:'11px 18px', fontSize:13, color: d.number ? LT.text : LT.muted2, borderBottom:`1px solid ${LT.border}`}}>{d.number || d.draftNumber || '—'}</td>
                 <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>{statusBadge(d.status)}</td>
                 <td style={{padding:'11px 18px', borderBottom:`1px solid ${LT.border}`}}>
-                  <button onClick={()=>setOpenDoc(d.id)} style={{
+                  <button onClick={e=>{e.stopPropagation(); setOpenDoc(d.id);}} style={{
                     background:LT.field, border:`1px solid ${LT.border}`, borderRadius:6, padding:'5px 10px',
                     fontSize:12, color:LT.text, cursor:'pointer', fontWeight:600
-                  }}>Маршрут</button>
+                  }}>Открыть</button>
                 </td>
               </tr>
             ))}
@@ -944,36 +966,110 @@ function Documents({ctx}){
         <DocsTable rows={pending} emptyText="Нет документов в работе" />
       </div>
 
-      {/* full registry */}
+      {/* memo registry */}
+      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden', marginBottom:20}}>
+        <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, fontSize:14, fontWeight:700, color:LT.text}}>
+          Реестр служебок
+        </div>
+        <DocsTable rows={memoDocs} emptyText="Служебок пока нет" />
+      </div>
+
+      {/* orders registry */}
       <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden'}}>
         <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, fontSize:14, fontWeight:700, color:LT.text}}>
-          Реестр документов — общий учёт
+          Реестр приказов
         </div>
-        <DocsTable rows={allDocs} emptyText="Документов пока нет" />
+        <DocsTable rows={orderDocs} emptyText="Приказов пока нет" />
       </div>
 
       <div style={{fontSize:11.5, color:LT.muted2, marginTop:10}}>
-        Пока документ на согласовании, у него временный номер «Проект-N». Постоянный регистрационный номер присваивается автоматически после полного подписания. Подписание — сейчас симуляция маршрута согласования. Реальную ЭЦП (НУЦ РК) подключим отдельно, когда определитесь.
+        Пока документ на согласовании, у него временный номер «Проект-N». Постоянный номер (СЗ-1, ПР-1 и т.д. — по типу документа) присваивается автоматически после полного подписания. Подписание — сейчас симуляция маршрута согласования. Реальную ЭЦП (НУЦ РК) подключим отдельно, когда определитесь.
       </div>
 
       {openDoc && (()=>{
         const d = documents.find(x=>x.id===openDoc);
         if(!d) return null;
+        const canAct = d.status==='на согласовании';
         return (
-          <Modal title={d.title} onClose={()=>setOpenDoc(null)}>
-            {d.number && <div style={{fontSize:12, color:'var(--muted)', marginBottom:10}}>Рег. номер: <span className="num">{d.number}</span></div>}
+          <Modal title={`${d.type} · ${d.title}`} onClose={()=>{setOpenDoc(null); setRejectMode(false); setRejectText('');}} width={600}>
+            <div style={{display:'flex', gap:10, flexWrap:'wrap', marginBottom:14, fontSize:12.5, color:'var(--muted)'}}>
+              <div><b style={{color:'var(--text)'}}>№:</b> {d.number || d.draftNumber || '—'}</div>
+              <div><b style={{color:'var(--text)'}}>Дата:</b> {d.date}</div>
+              <div><b style={{color:'var(--text)'}}>От кого:</b> {d.author}</div>
+              {d.to && <div><b style={{color:'var(--text)'}}>Кому:</b> {d.to}</div>}
+              {d.amount && <div><b style={{color:'var(--text)'}}>Сумма:</b> {fmtKZT(d.amount)}</div>}
+            </div>
+
             <div style={{marginBottom:14}}>
+              <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:5}}>Текст документа</div>
+              <div style={{fontSize:13.5, whiteSpace:'pre-wrap', background:'var(--panel-2)', border:'1px solid var(--line)', padding:'10px 12px'}}>
+                {d.text?.trim() || 'Текст не указан.'}
+              </div>
+            </div>
+
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:5}}>Прикреплённые файлы</div>
+              {d.files && d.files.length>0 ? (
+                <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                  {d.files.map((f,i)=>(
+                    <span key={i} style={{fontSize:12, background:'var(--panel-2)', border:'1px solid var(--line)', padding:'4px 9px'}}>{f}</span>
+                  ))}
+                </div>
+              ) : <div style={{fontSize:12.5, color:'var(--muted-2)'}}>Файлы не прикреплены</div>}
+            </div>
+
+            <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:8}}>Маршрут согласования</div>
+            <div style={{marginBottom:16}}>
               {d.steps.map((s,i)=>(
-                <div key={i} style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom: i<d.steps.length-1 ? '1px solid var(--line)':'none'}}>
-                  <div>
-                    <div style={{fontSize:13.5}}>{s.name}</div>
-                    <div style={{fontSize:11, color:'var(--muted-2)'}}>{s.role}</div>
+                <div key={i} style={{padding:'9px 0', borderBottom: i<d.steps.length-1 ? '1px solid var(--line)':'none'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                    <div>
+                      <div style={{fontSize:13.5}}>{s.name}</div>
+                      <div style={{fontSize:11, color:'var(--muted-2)'}}>{s.role}</div>
+                    </div>
+                    <Badge tone={s.status==='подписано'?'good':s.status==='отклонено'?'bad':'accent'}>{s.status}</Badge>
                   </div>
-                  <Badge tone={s.status==='подписано'?'good':'accent'}>{s.status}</Badge>
+                  {s.status==='отклонено' && s.comment && (
+                    <div style={{fontSize:12, color:'var(--bad)', marginTop:6, background:'rgba(192,86,74,.08)', padding:'7px 9px'}}>
+                      Комментарий: {s.comment}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-            {d.status!=='подписан' && <Btn tone="accent" onClick={()=>{advance(d.id);}}>Подписать следующий шаг</Btn>}
+
+            {d.status==='подписан' && (
+              <div style={{fontSize:13, color:'var(--good)'}}>Документ полностью подписан. Рег. номер: {d.number}</div>
+            )}
+            {d.status==='отклонён' && (
+              <div style={{fontSize:13, color:'var(--bad)'}}>Документ отклонён на этапе согласования.</div>
+            )}
+
+            {canAct && !rejectMode && (
+              <div style={{display:'flex', gap:10}}>
+                <Btn tone="accent" onClick={()=>advance(d.id)}>Подписать следующий шаг</Btn>
+                <button onClick={()=>setRejectMode(true)} style={{
+                  background:'transparent', border:'1px solid var(--bad)', color:'var(--bad)',
+                  padding:'8px 14px', fontSize:13.5, fontWeight:600, cursor:'pointer'
+                }}>Отказать</button>
+              </div>
+            )}
+
+            {canAct && rejectMode && (
+              <div>
+                <div style={{fontSize:11.5, color:'var(--muted)', marginBottom:6}}>Комментарий к отказу</div>
+                <textarea autoFocus value={rejectText} onChange={e=>setRejectText(e.target.value)}
+                  placeholder="Укажите причину отказа в согласовании / подписании"
+                  style={{width:'100%', minHeight:70, background:'var(--panel-2)', border:'1px solid var(--line)', color:'var(--text)', padding:'8px 10px', fontSize:13.5, marginBottom:10}}/>
+                <div style={{display:'flex', gap:10}}>
+                  <button onClick={()=>reject(d.id, rejectText)} style={{
+                    background:'var(--bad)', color:'#fff', border:'1px solid var(--bad)',
+                    padding:'8px 14px', fontSize:13.5, fontWeight:600, cursor:'pointer'
+                  }}>Подтвердить отказ</button>
+                  <Btn onClick={()=>{setRejectMode(false); setRejectText('');}}>Отмена</Btn>
+                </div>
+              </div>
+            )}
           </Modal>
         );
       })()}
