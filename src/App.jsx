@@ -724,14 +724,23 @@ function Documents({ctx}){
   const [activeType, setActiveType] = useState(DOC_TYPES[0].id);
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectText, setRejectText] = useState('');
+  const [tab, setTab] = useState('pending');
   const blankForm = {title:'', from: STAFF[0].id, to:'', text:'', files:[], amount:'', approvers:[], signer: STAFF[3].id};
   const [form, setForm] = useState(blankForm);
 
   const type = DOC_TYPES.find(t=>t.id===activeType) || DOC_TYPES[0];
 
   const pending = documents.filter(d=>d.status==='на согласовании');
-  const memoDocs = documents.filter(d=>d.type!=='Приказ');
+  const memoTypeLabels = DOC_TYPES.filter(t=>t.id!=='prikaz').map(t=>t.label);
+  const memoDocs = documents.filter(d=>memoTypeLabels.includes(d.type));
   const orderDocs = documents.filter(d=>d.type==='Приказ');
+
+  const TABS = [
+    {id:'pending', label:'На согласовании / подписании', rows: pending, empty:'Нет документов в работе'},
+    {id:'memo', label:'Служебные записки', rows: memoDocs, empty:'Служебок пока нет'},
+    {id:'orders', label:'Приказы', rows: orderDocs, empty:'Приказов пока нет'},
+  ];
+  const activeTab = TABS.find(t=>t.id===tab) || TABS[0];
 
   function pickType(id){
     setActiveType(id);
@@ -957,29 +966,30 @@ function Documents({ctx}){
         </div>
       )}
 
-      {/* pending list */}
-      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden', marginBottom:20}}>
-        <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, display:'flex', alignItems:'center', gap:10}}>
-          <div style={{fontSize:14, fontWeight:700, color:LT.text}}>На согласовании / подписании</div>
-          {pending.length>0 && <span style={{fontSize:11.5, fontWeight:600, color:LT.accent, background:LT.accentSoft, borderRadius:20, padding:'2px 9px'}}>{pending.length}</span>}
-        </div>
-        <DocsTable rows={pending} emptyText="Нет документов в работе" />
+      {/* tabs */}
+      <div style={{display:'flex', gap:4, borderBottom:`1px solid ${LT.border}`, marginBottom:0}}>
+        {TABS.map(t=>{
+          const active = t.id===tab;
+          return (
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              background:'transparent', border:'none', borderBottom: active ? `2px solid ${LT.accent}` : '2px solid transparent',
+              padding:'10px 16px', fontSize:13.5, fontWeight:600, cursor:'pointer',
+              color: active ? LT.accent : LT.muted, display:'flex', alignItems:'center', gap:8, marginBottom:-1
+            }}>
+              {t.label}
+              {t.rows.length>0 && (
+                <span style={{
+                  fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20,
+                  background: active ? LT.accentSoft : LT.field, color: active ? LT.accent : LT.muted2
+                }}>{t.rows.length}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* memo registry */}
-      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden', marginBottom:20}}>
-        <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, fontSize:14, fontWeight:700, color:LT.text}}>
-          Реестр служебок
-        </div>
-        <DocsTable rows={memoDocs} emptyText="Служебок пока нет" />
-      </div>
-
-      {/* orders registry */}
-      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderRadius:12, overflow:'hidden'}}>
-        <div style={{padding:'14px 18px', borderBottom:`1px solid ${LT.border}`, fontSize:14, fontWeight:700, color:LT.text}}>
-          Реестр приказов
-        </div>
-        <DocsTable rows={orderDocs} emptyText="Приказов пока нет" />
+      <div style={{background:LT.card, border:`1px solid ${LT.border}`, borderTop:'none', borderRadius:'0 0 12px 12px', overflow:'hidden'}}>
+        <DocsTable rows={activeTab.rows} emptyText={activeTab.empty} />
       </div>
 
       <div style={{fontSize:11.5, color:LT.muted2, marginTop:10}}>
